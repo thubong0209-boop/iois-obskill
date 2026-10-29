@@ -156,6 +156,27 @@ const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,x=
 const key=()=>'';let awaiting=null;
 window.addEventListener('message',e=>{if(!awaiting||!/^https:\/\/([a-z0-9-]+\.)*(googleusercontent\.com|google\.com)$/.test(e.origin))return;const v=e.data||{};if(v.kind!=='IOIS_API'||v.requestId!==awaiting.id)return;const old=awaiting;awaiting=null;clearTimeout(old.timer);v.ok?old.resolve(v):old.reject(Error(v.error||'Lỗi server'));});
 function api(action,body={}){if(!API_URL.startsWith('https://script.google.com/macros/s/'))return Promise.reject(Error('Chưa điền URL Apps Script trong file HTML.'));if(awaiting)return Promise.reject(Error('Đang có một yêu cầu khác'));const id='REQ_'+Date.now()+'_'+Math.random().toString(36).slice(2);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{awaiting=null;reject(Error('Chưa nhận được xác nhận từ máy chủ. Kiểm tra Google Sheets trước khi lưu lại.'));},25000);awaiting={id,resolve,reject,timer};$('#payload').value=JSON.stringify({action,trainer_id:$('#trainerName').value,requestId:id,...body});$('#wire').action=API_URL;$('#wire').submit();});}
+// Read-only DEMO list uses JSONP, avoiding cross-origin iframe message handshakes.
+function apiListJSONP(){
+  const trainerId=document.querySelector('#trainerName').value;
+  return new Promise((resolve,reject)=>{
+    const cb='ioisTrainerList_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+    const script=document.createElement('script');
+    let finished=false;
+    const cleanup=()=>{delete window[cb];script.remove();clearTimeout(timer);};
+    const fail=(msg)=>{if(finished)return;finished=true;cleanup();reject(new Error(msg));};
+    window[cb]=(payload)=>{
+      if(finished)return;
+      finished=true;cleanup();
+      if(payload&&payload.ok===true)resolve(payload);
+      else reject(new Error(payload?.error||'Máy chủ từ chối tải bài.'));
+    };
+    const timer=setTimeout(()=>fail('Không tải được danh sách bài sau 20 giây. Kiểm tra bản triển khai Trainer API có hỗ trợ JSONP.'),20000);
+    script.onerror=()=>fail('Không tải được API Trainer. Kiểm tra quyền truy cập và URL Web App.');
+    script.src=API_URL+'?action=list&trainer_id='+encodeURIComponent(trainerId)+'&callback='+encodeURIComponent(cb)+'&t='+Date.now();
+    document.head.appendChild(script);
+  });
+}
 function inputs(form){return Object.fromEntries(new FormData(form).entries());}
 function textArea(k,label,required=false){return `<label>${esc(label)}${required?' *':''}</label><textarea name="${esc(k)}" ${required?'required':''}></textarea>`;}
 function sel(k,label,choices){const emphasized=k==='profile'||k==='scenario';return `<div class="${emphasized?'highlight-select-wrap':''}"><label>${esc(label)}${emphasized?' <span class="select-required">• Bắt buộc chọn</span>':''}</label>${emphasized?'<p class="selection-hint">▼ Chọn nội dung trong danh sách trước khi chấm điểm</p>':''}<select name="${esc(k)}" ${emphasized?'required':''}><option value="">-- ${emphasized?'BẤM ĐỂ CHỌN '+esc(label).toUpperCase():'Chọn'} --</option>${choices.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>`;}
@@ -271,7 +292,7 @@ refresh = async function () {
   if(!trainer) return;
   $('#queue').textContent='Đang tải bài từ Google Sheets học viên...';
   try {
-    const result=await api('list');
+    const result=await apiListJSONP();
     submissions=(result.submissions||[]).map(s=>({
       ...s,
       id:s.submission_id||s.id,
