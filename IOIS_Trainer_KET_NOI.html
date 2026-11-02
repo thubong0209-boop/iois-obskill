@@ -155,7 +155,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#9dc7ac;box-sh
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
 const key=()=>'';let awaiting=null;
 window.addEventListener('message',e=>{if(!awaiting||!/^https:\/\/([a-z0-9-]+\.)*(googleusercontent\.com|google\.com)$/.test(e.origin))return;const v=e.data||{};if(v.kind!=='IOIS_API'||v.requestId!==awaiting.id)return;const old=awaiting;awaiting=null;clearTimeout(old.timer);v.ok?old.resolve(v):old.reject(Error(v.error||'Lỗi server'));});
-function api(action,body={}){if(!API_URL.startsWith('https://script.google.com/macros/s/'))return Promise.reject(Error('Chưa điền URL Apps Script trong file HTML.'));if(awaiting)return Promise.reject(Error('Đang có một yêu cầu khác'));const id='REQ_'+Date.now()+'_'+Math.random().toString(36).slice(2);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{awaiting=null;reject(Error('Chưa nhận được xác nhận từ máy chủ. Kiểm tra Google Sheets trước khi lưu lại.'));},25000);awaiting={id,resolve,reject,timer};$('#payload').value=JSON.stringify({action,trainer_id:$('#trainerName').value,requestId:id,...body});$('#wire').action=API_URL;$('#wire').submit();});}
+function api(action,body={}){if(action==='list')return apiListJSONP();if(action==='config')return Promise.resolve({user:{id:$('#trainerName').value,name:($('#trainerName').selectedOptions[0]||{}).textContent||$('#trainerName').value}});if(!API_URL.startsWith('https://script.google.com/macros/s/'))return Promise.reject(Error('Chưa điền URL Apps Script trong file HTML.'));if(awaiting)return Promise.reject(Error('Đang có một yêu cầu khác'));const id='REQ_'+Date.now()+'_'+Math.random().toString(36).slice(2);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{awaiting=null;reject(Error('Chưa nhận được xác nhận từ máy chủ. Kiểm tra Google Sheets trước khi lưu lại.'));},25000);awaiting={id,resolve,reject,timer};$('#payload').value=JSON.stringify({action,trainer_id:$('#trainerName').value,requestId:id,...body});$('#wire').action=API_URL;$('#wire').submit();});}
 // Read-only DEMO list uses JSONP, avoiding cross-origin iframe message handshakes.
 function apiListJSONP(){
   const trainerId=document.querySelector('#trainerName').value;
@@ -248,7 +248,7 @@ function renderEval(){
 }
 document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{const kind=b.dataset.kind;if($('#kind').value===kind)return;$('#kind').value=kind;document.querySelectorAll('[data-kind]').forEach(x=>{const active=x.dataset.kind===kind;x.classList.toggle('is-active',active);x.setAttribute('aria-pressed',String(active));});renderEval();const report=$('#assessmentManagementReport');if(report)report.innerHTML='';}));$('#evalForm').onsubmit=async e=>{e.preventDefault();if(!trainer){$('#evalMsg').textContent='Vui lòng chọn giảng viên';return;}const f=inputs(e.target),ratings=[...document.querySelectorAll('.rate')].map(x=>x.value);if(ratings.some(x=>!x)){ $('#evalMsg').textContent='Vui lòng đánh giá đủ tất cả tiêu chí trước khi lưu.'; return; }$('#saveEval').disabled=true;try{const x=await api('assessment',{kind:f.kind,iois_id:f.iois_id,iois_name:f.iois_name,class_id:f.class_id,unit:f.unit,date:f.date,profile:f.profile,scenario:f.scenario,warning:f.warning,comments:f.comments,coaching:f.coaching,ratings});$('#evalMsg').textContent='✓ Đã lưu phiếu: '+x.id;showManagementResult(makeAssessmentSummary(f,ratings,x.id),$('#assessmentManagementReport'));}catch(err){$('#evalMsg').textContent='Lỗi: '+err.message;}finally{$('#saveEval').disabled=false;}};
 async function refresh(){if(!trainer)return;$('#queue').textContent='Đang tải…';try{const x=await api('list');submissions=x.submissions;drawQueue();drawDashboard();}catch(err){$('#queue').textContent=err.message;}}
-function drawQueue(){const q=$('#search').value.trim().toLowerCase(),flt=$('#filter').value;const total=submissions.length,done=submissions.filter(s=>s.status==='Đã chấm').length;$('#queueStats').innerHTML=`<div class="queue-kpi"><strong>${total}</strong><span>Tổng số bài</span></div><div class="queue-kpi"><strong>${total-done}</strong><span>Chờ chấm</span></div><div class="queue-kpi"><strong>${done}</strong><span>Đã chấm</span></div>`;const shown=submissions.filter(s=>(flt==='all'||s.status===flt)&&[s.name,s.iois_id,s.class_id,s.trainer,s.id].some(x=>String(x??'').toLowerCase().includes(q)));$('#queue').innerHTML=shown.map(s=>`<div class="card row"><div><b>${esc(s.name)}</b> • ${esc(s.iois_id)} <span class="pill">${esc(s.status)}</span><p class="mini">Bài ${s.assignment}, lần ${s.attempt} • Lớp ${esc(s.class_id)} • Giảng viên: ${esc(s.trainer)} ${s.status==='Đã chấm'?`• ${esc(s.score)}/100 – ${esc(s.rank)}`:''}</p><p class="mini">Mã bài nộp: ${esc(s.id)}</p></div><button type="button" data-open="${esc(s.id)}">${s.status==='Đã chấm'?'Xem bài & phiếu đã chấm':'Xem & chấm'}</button></div>`).join('')||'<p>Không có bài phù hợp.</p>';document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openReview(b.dataset.open));}
+function drawQueue(){const q=$('#search').value.trim().toLowerCase(),flt=$('#filter').value;const total=submissions.length,done=submissions.filter(s=>s.status==='Đã chấm').length;$('#queueStats').innerHTML=`<div class="queue-kpi"><strong>${total}</strong><span>Tổng số bài</span></div><div class="queue-kpi"><strong>${total-done}</strong><span>Chờ chấm</span></div><div class="queue-kpi"><strong>${done}</strong><span>Đã chấm</span></div>`;const shown=submissions.filter(s=>(flt==='all'||s.status===flt)&&[s.name,s.iois_id,s.class_id,s.trainer,s.id].some(x=>String(x??'').toLowerCase().includes(q)));$('#queue').innerHTML=shown.map(s=>`<div class="card row"><div><b>${esc(s.name)}</b> • ${esc(s.iois_id)} <span class="pill">${esc(s.status)}</span><p class="mini">Bài ${s.assignment}, lần ${s.attempt} • Lớp ${esc(s.class_id)} • Giảng viên: ${esc(s.trainer)} ${s.status==='Đã chấm'?`• ${esc(s.score)}/100 – ${esc(s.rank)}`:''}</p><p class="mini">Mã bài nộp: ${esc(s.id)}</p></div><button type="button" data-open="${esc(s.id)}">${s.status==='Đã chấm'?'Xem bài đã chấm':'Xem bài & chấm điểm'}</button></div>`).join('')||'<p>Không có bài phù hợp.</p>';document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openReview(b.dataset.open));}
 $('#refresh').onclick=refresh;$('#search').oninput=drawQueue;$('#filter').onchange=drawQueue;
 async function openReview(id){$('#review').textContent='Đang tải bài nộp…';try{const x=await api('detail',{id});view=x.record;const max=view.assignment==1?DATA.max1:DATA.max2, names=view.assignment==1?DATA.rub1:DATA.rub2;let fields=x.record.data.fields||{};let data=Object.entries(fields).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`<tr><td>${esc(friendlyField(k))}</td><td style="white-space:pre-wrap">${esc(v)}</td></tr>`).join('');$('#review').innerHTML=`<h2>Review • ${esc(view.name)} • Bài ${view.assignment}</h2><div id="pastGrades" class="card"></div><div class="split"><div><h3>Bài làm học viên</h3><div class="card" style="max-height:650px;overflow:auto"><table><thead><tr><th>Trường gốc</th><th>Nội dung</th></tr></thead><tbody>${data}</tbody></table></div></div><div><form id="gradeForm"><h3>Rubric đánh giá – 100 điểm</h3>${names.map((name,i)=>`<div class="line"><label>${esc(name)} • Tối đa ${max[i]} điểm</label><input type="number" class="point" min="0" max="${max[i]}" step="1" value="0" required /></div>`).join('')}<p class="feedback" id="sum">Tổng điểm: 0/100</p>${[['strength','01 điểm mạnh cần duy trì'],['improve','01 hành vi ưu tiên cần cải thiện'],['practice','Bài tập role-play/áp dụng lại'],['repetitions','Số lần áp dụng trước buổi sau'],['deadline','Ngày kiểm tra lại'],['evidence','Bằng chứng cần mang tới'],['remarks','Nhận xét khác']].map(([k,l])=>textArea(k,l)).join('')}<button class="accent" id="saveGrade" type="submit">Lưu điểm & nhận xét</button><p class="status" id="gradeMsg"></p></form></div></div><section id="report" class="hide"></section>`;document.querySelectorAll('.point').forEach(t=>t.oninput=()=>{$('#sum').textContent='Tổng điểm: '+[...document.querySelectorAll('.point')].reduce((s,x)=>s+Number(x.value||0),0)+'/100';});$('#gradeForm').onsubmit=saveGrade;const past=x.grades||[];$('#pastGrades').innerHTML='<h3>Lịch sử chấm bài ('+past.length+')</h3>'+(past.length?past.map((g,i)=>`<div class="line row"><div><b>Lần chấm ${i+1}: ${esc(g.score)}/100 — ${esc(g.rank)}</b><p class="mini">${esc(g.date)} • ${esc(g.trainer)} • ${esc(g.grade_id)}</p></div><button type="button" class="secondary" data-grade="${i}">Xem / tải phiếu PDF</button></div>`).join(''):'<p class="mini">Bài chưa được chấm.</p>');document.querySelectorAll('[data-grade]').forEach(b=>b.onclick=()=>{const g=past[Number(b.dataset.grade)];renderReport(g,g,g.points);});$('#review').scrollIntoView({behavior:'smooth'});}catch(err){$('#review').textContent=err.message;}}
 async function saveGrade(e){e.preventDefault();let points=[...document.querySelectorAll('.point')].map(x=>Number(x.value)),f=inputs(e.target);$('#saveGrade').disabled=true;try{let x=await api('grade',{submission_id:view.id,points,...f});$('#gradeMsg').textContent='✓ Đã lưu '+x.score+'/100 — '+x.rank+' • '+x.grade_id;renderReport(x,f,points);await refresh();}catch(err){$('#gradeMsg').textContent=err.message;}finally{$('#saveGrade').disabled=false;}}
@@ -298,9 +298,9 @@ refresh = async function () {
       id:s.submission_id||s.id,
       name:s.iois_name||s.iois_id||'Học viên DEMO',
       trainer:s.trainer_name||trainer.name,
-      status:'Chờ chấm',
-      score:null,
-      rank:'',
+      status:s.status||'Chờ chấm',
+      score:s.score??null,
+      rank:s.rank||'',
       data:s.data||{}
     }));
     drawQueue();drawDashboard();
@@ -310,20 +310,83 @@ refresh = async function () {
     $('#authMsg').textContent='Lỗi kết nối: '+err.message;
   }
 };
+// Always invoke the current JSONP refresh, not the old iframe function
+// captured when the original button handler was assigned.
+$('#refresh').onclick = () => refresh();
 openReview = async function (id) {
   const r=submissions.find(s=>s.id===id);
   if(!r){$('#review').textContent='Không tìm thấy bài trong danh sách đã tải.';return;}
-  const fields=(r.data && r.data.fields && typeof r.data.fields==='object')?r.data.fields:{};
-  const entries=Object.entries(fields).filter(([k,v])=>v!==null&&v!==undefined&&v!=='');
+  view=r;
+  const f=r.data?.fields||{};
+  const entries=Object.entries(f).filter(([k,v])=>v!==''&&v!==null&&v!==undefined);
   const table=entries.map(([k,v])=>'<tr><td>'+esc(friendlyField(k))+'</td><td style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(typeof v==='object'?JSON.stringify(v,null,2):v)+'</td></tr>').join('');
-  $('#review').innerHTML='<h2>Bài làm học viên — Bài '+esc(r.assignment)+'</h2>'+
-    '<p><b>Học viên:</b> '+esc(r.name)+' &nbsp; <b>Mã:</b> '+esc(r.iois_id)+' &nbsp; <b>Trainer:</b> '+esc(r.trainer)+'</p>'+
-    '<p class="mini">Mã bài nộp: '+esc(r.id)+' • Mã lớp: '+esc(r.class_id)+' • Lần nộp: '+esc(r.attempt)+'</p>'+
-    '<div class="help" style="margin:12px 0">Bản thử nghiệm hiện chỉ cho xem bài. Chấm điểm và lưu Follow-up sẽ được kết nối với Sheet giảng viên ở bước tiếp theo.</div>'+
-    '<div class="card" style="max-height:700px;overflow:auto"><table><thead><tr><th>Thông tin bài làm</th><th>Nội dung</th></tr></thead><tbody>'+
-    (table||'<tr><td colspan="2">Bài DEMO này không có nội dung câu trả lời.</td></tr>')+'</tbody></table></div>';
+  const names=r.assignment===1?DATA.rub1:DATA.rub2;
+  const max=r.assignment===1?DATA.max1:DATA.max2;
+  $('#review').innerHTML='<h2>Chi tiết bài nộp & Chấm bài '+esc(r.assignment)+'</h2>'+
+    '<p><b>Học viên:</b> '+esc(r.name)+' • <b>Mã:</b> '+esc(r.iois_id)+' • <b>Trainer:</b> '+esc(r.trainer)+'</p>'+
+    '<p class="mini">Mã bài: '+esc(r.id)+' • Lớp: '+esc(r.class_id)+' • Lần nộp: '+esc(r.attempt)+'</p>'+
+    '<div class="split"><div><h3>Bài làm học viên</h3><div class="card" style="max-height:650px;overflow:auto"><table><thead><tr><th>Nội dung</th><th>Câu trả lời</th></tr></thead><tbody>'+
+    (table||'<tr><td colspan="2">Bài thử chưa có nội dung câu trả lời.</td></tr>')+'</tbody></table></div></div>'+
+    '<div><form id="gradeForm"><h3>Rubric chấm bài /100 điểm</h3>'+
+    names.map((name,i)=>'<div class="line"><label>'+esc(name)+' • Tối đa '+max[i]+' điểm</label><input type="number" class="point" min="0" max="'+max[i]+'" step="1" value="0" required></div>').join('')+
+    '<p class="feedback" id="sum">Tổng điểm: 0/100</p>'+
+    [['strength','Điểm mạnh'],['improve','Điểm cần cải thiện'],['practice','Bài tập thực hành'],['repetitions','Số lần áp dụng'],['deadline','Ngày kiểm tra lại'],['evidence','Bằng chứng'],['remarks','Nhận xét bổ sung']].map(([k,l])=>textArea(k,l)).join('')+
+    '<button type="submit" class="accent" id="saveGrade">Lưu điểm chấm vào Google Sheets giảng viên</button><p id="gradeMsg" class="status"></p></form></div></div>';
+  document.querySelectorAll('#gradeForm .point').forEach(el=>el.addEventListener('input',()=>{
+    $('#sum').textContent='Tổng điểm: '+[...document.querySelectorAll('#gradeForm .point')].reduce((a,x)=>a+Number(x.value||0),0)+'/100';
+  }));
+  $('#gradeForm').onsubmit=saveGradeV2;
   $('#review').scrollIntoView({behavior:'smooth',block:'start'});
 };
+function trainerJSONP(action,params={}) {
+  return new Promise((resolve,reject)=>{
+    const cb='ioisTrainerList_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+    const script=document.createElement('script');let settled=false;
+    const clean=()=>{delete window[cb];script.remove();clearTimeout(timer)};
+    const fail=e=>{if(settled)return;settled=true;clean();reject(new Error(e))};
+    window[cb]=data=>{if(settled)return;settled=true;clean();data?.ok?resolve(data):reject(new Error(data?.error||'Lỗi API'))};
+    const timer=setTimeout(()=>fail('Không nhận được kết quả sau 20 giây'),20000);
+    script.onerror=()=>fail('Không tải được dữ liệu máy chủ');
+    script.src=API_URL+'?'+new URLSearchParams({action,callback:cb,...params});
+    document.head.appendChild(script);
+  });
+}
+async function saveGradeV2(e){
+  e.preventDefault();
+  if(!view){return}
+  const btn=$('#saveGrade'),msg=$('#gradeMsg');
+  const points=[...document.querySelectorAll('#gradeForm .point')].map(x=>Number(x.value));
+  const max=view.assignment===1?DATA.max1:DATA.max2;
+  if(points.some((n,i)=>!Number.isInteger(n)||n<0||n>max[i])){msg.textContent='Điểm không hợp lệ. Kiểm tra từng tiêu chí.';return;}
+  const info=inputs(e.target),grade_id='';
+  btn.disabled=true;msg.textContent='Đang gửi phiếu chấm lên Google Sheets...';
+  const submitId=view.id;
+  const data={action:'grade',trainer_id:$('#trainerName').value,submission_id:submitId,points,...info};
+  const iframe=document.querySelector('iframe[name="receiver"]');
+  const form=$('#wire');
+  if(!form||!iframe){msg.textContent='Không tìm thấy biểu mẫu gửi API';btn.disabled=false;return;}
+  const rid='REQ_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+  $('#payload').value=JSON.stringify({...data,requestId:rid});
+  form.action=API_URL;form.submit();
+  // Server writes a unique grade ID. Confirm the newest grade by reloading list and matching latest grade ID.
+  // Avoid claiming success just because POST was sent.
+  let matched=null;
+  for(let attempt=0;attempt<8;attempt++){
+    await new Promise(r=>setTimeout(r,1800));
+    try{
+      const result=await trainerJSONP('list',{trainer_id:$('#trainerName').value});
+      const latest=result.submissions.find(x=>x.id===submitId);
+      if(latest?.grade_id && latest.grade_id!==view.grade_id){matched=latest;break;}
+    }catch(error){msg.textContent='Đang đợi xác nhận từ máy chủ: '+error.message;}
+  }
+  if(matched){
+    msg.textContent='Đã lưu '+matched.score+'/100 • '+matched.rank+' • Mã '+matched.grade_id;
+    await refresh();
+  }else{
+    msg.textContent='Chưa xác nhận được việc lưu. Vui lòng kiểm tra CHAM_BAI_'+view.assignment+' trước khi bấm lại để tránh trùng.';
+  }
+  btn.disabled=false;
+}
 // Prevent false expectation that assessments can be saved before a write API exists.
 $('#evalForm').onsubmit=function(e){e.preventDefault();$('#evalMsg').textContent='Chế độ DEMO đang kiểm tra nhận bài. Chức năng lưu đánh giá 2 ngày/cuối khóa sẽ được kết nối ở bước sau.';};
 // Rename actions while in read-only mode.
@@ -331,7 +394,7 @@ const ioisReadOnlyStyle=document.createElement('style');
 ioisReadOnlyStyle.textContent='.iois-demo-banner{padding:12px 16px;background:#fff7dc;border-left:4px solid #ffc72c;color:#285063;border-radius:10px;margin:12px auto;max-width:1140px;font-weight:700}';
 document.head.appendChild(ioisReadOnlyStyle);
 const ioisBanner=document.createElement('div');ioisBanner.className='iois-demo-banner';
-ioisBanner.textContent='IOIS Trainer — Chế độ DEMO: xem bài được giao từ Google Sheets học viên. Chấm bài, đánh giá và Follow-up chưa bật lưu dữ liệu.';
+ioisBanner.textContent='IOIS Trainer — Chế độ DEMO: xem và chấm Bài 1/Bài 2. Đánh giá 2 ngày, cuối khóa và Follow-up riêng chưa bật lưu dữ liệu.';
 document.querySelector('header')?.insertAdjacentElement('afterend',ioisBanner);
 
 </script></body></html>
